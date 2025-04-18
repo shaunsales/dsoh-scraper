@@ -6,9 +6,6 @@
 #Custom Ignores
 .seq-data
 
-# Development settings files
-**/appsettings.Development.json
-
 # Rider-specific files
 *.idea
 *.DS_Store

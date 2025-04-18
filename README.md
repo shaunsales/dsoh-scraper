@@ -11,7 +11,6 @@ If you use this app, please support Lars Behrenroth at https://www.deepershades.
 - Shows download progress with a nice console UI powered by Spectre.Console
 - Configurable output directory and parallel download limit
 - Supports downloading single shows or ranges of shows
-- Modern C# coding practices including source-generated regex and centralized package management
 
 ## Usage
 
@@ -40,14 +39,26 @@ If you run the application without any arguments, it will prompt you for:
 
 Then follow the on-screen instructions to enter the required information.
 
-## Project Structure
-
-- `Program.cs`: Main entry point with top-level statements
-- `Services/AudioDownloader.cs`: Module for downloading audio files with parallel execution support
-- `Services/ConsoleService.cs`: Static service for handling all console input/output operations
-- `Directory.Packages.props`: Centralized package management file
-
 ## Dependencies
 
 - [SoundCloudExplode](https://github.com/MuddyC3/SoundCloudExplode) (SoundCloud API access)
 - [Spectre.Console](https://spectreconsole.net/) (Console UI and progress)
+
+## Publishing & Deployment
+
+This project is configured for modern .NET deployment features:
+
+- **AOT Compilation**: Publish fully native executables for maximum performance and fast startup.
+- **Single-file publishing**: All dependencies are bundled into a single output file.
+- **Trimming & Compression**: Unused code is trimmed and the output is compressed for minimal file size.
+- **Invariant globalization**: Reduces binary size by removing culture-specific data.
+- **Self-contained**: No .NET runtime installation required on the target machine.
+
+### How to publish a native, single-file executable
+
+```bash
+dotnet publish -c Release -r <RID> --self-contained true /p:PublishAot=true
+```
+Replace `<RID>` with your target runtime (e.g., `win-x64`, `osx-arm64`, `linux-x64`). The output will be a single, native executable in the `bin/Release/net9.0/<RID>/publish` folder.
+
+All these features are enabled by default in the project file.
