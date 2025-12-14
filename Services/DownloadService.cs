@@ -6,9 +6,10 @@ using SoundCloudExplode.Tracks;
 
 namespace DsohScraper.Services;
 
-public class DownloadService(string outputDirectory, int maxParallelDownloads)
+public class DownloadService(string outputDirectory, int userId)
 {
     private readonly SoundCloudClient _soundCloudClient = new();
+    private readonly int _userId = userId;
 
     public async Task InitializeSoundCloudClientAsync()
     {
@@ -31,22 +32,19 @@ public class DownloadService(string outputDirectory, int maxParallelDownloads)
             Directory.CreateDirectory(outputDirectory);
         }
 
-        var parallelOptions = new ParallelOptions
+        foreach (var showNumber in showNumbers.OrderBy(n => n))
         {
-            MaxDegreeOfParallelism = maxParallelDownloads,
-            CancellationToken = cancellationToken
-        };
-        
-        await Parallel.ForEachAsync(showNumbers, parallelOptions, ProcessShowDownloadAsync);
+            cancellationToken.ThrowIfCancellationRequested();
+            await ProcessShowDownloadAsync(showNumber, cancellationToken);
+        }
     }
 
-    private async ValueTask ProcessShowDownloadAsync(int showNumber, CancellationToken token)
+    private async Task ProcessShowDownloadAsync(int showNumber, CancellationToken token)
     {
-        const int userId = 2497;
         var searchQuery = $"DSOH #{showNumber}";
         var filteredResults = await GetFilteredTracksAsync(
             searchQuery,
-            userId,
+            _userId,
             searchQuery,
             token);
 
@@ -54,7 +52,7 @@ public class DownloadService(string outputDirectory, int maxParallelDownloads)
         {
             filteredResults = await GetFilteredTracksAsync(
                 $"Deeper Shades of House #{showNumber}",
-                userId,
+                _userId,
                 $"#{showNumber}",
                 token);
         }
@@ -81,6 +79,10 @@ public class DownloadService(string outputDirectory, int maxParallelDownloads)
                 await DownloadTrackAsync(track, filePath, cancellationToken);
             }
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             ConsoleService.LogError($"Error downloading show #{showNumber}: {ex.Message}");
@@ -99,30 +101,26 @@ public class DownloadService(string outputDirectory, int maxParallelDownloads)
 
     private async Task DownloadTrackAsync(Track track, string outputPath, CancellationToken cancellationToken)
     {
+        var displayName = track.Title ?? Path.GetFileName(outputPath);
+        var taskKey = outputPath;
+
         try
         {
-            if (track.Title is null)
-            {
-                ConsoleService.LogError("Track title is null.");
-                return;
-            }
-            
             // Ensure the directory exists (CreateDirectory is idempotent)
             Directory.CreateDirectory(Path.GetDirectoryName(outputPath) ?? string.Empty);
             
             if (File.Exists(outputPath))
             {
-                ProgressService.Instance.AddTask(track.Title);
-                ProgressService.Instance.UpdateProgress(track.Title, 1);
+                ProgressService.Instance.AddTask(taskKey, $"{displayName} (already exists)");
+                ProgressService.Instance.CompleteTask(taskKey);
                 return;
             }
             
-            ProgressService.Instance.AddTask(track.Title);
+            ProgressService.Instance.AddTask(taskKey, displayName);
             
             var progress = new Progress<double>(p =>
             {
-                if (track.Title != null)
-                    ProgressService.Instance.UpdateProgress(track.Title, p);
+                ProgressService.Instance.UpdateProgress(taskKey, p);
             });
 
             await _soundCloudClient.DownloadAsync(
@@ -132,8 +130,7 @@ public class DownloadService(string outputDirectory, int maxParallelDownloads)
                 cancellationToken: cancellationToken
             );
 
-            if (track.Title != null)
-                ProgressService.Instance.CompleteTask(track.Title);
+            ProgressService.Instance.CompleteTask(taskKey);
         }
         catch (OperationCanceledException)
         {
@@ -143,7 +140,7 @@ public class DownloadService(string outputDirectory, int maxParallelDownloads)
         catch (Exception ex)
         {
             ConsoleService.LogError($"Error downloading track {track.Title}: {ex.Message}");
-            throw;
+            ProgressService.Instance.CompleteTask(taskKey);
         }
     }
 }

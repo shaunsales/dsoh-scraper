@@ -4,7 +4,7 @@
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="SoundCloudExplode" Version="1.6.5" />
-    <PackageVersion Include="Spectre.Console" Version="0.50.0" />
+    <PackageVersion Include="SoundCloudExplode" Version="1.6.7" />
+    <PackageVersion Include="Spectre.Console" Version="0.54.0" />
   </ItemGroup>
 </Project>

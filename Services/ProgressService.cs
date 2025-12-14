@@ -26,27 +26,28 @@ public class ProgressService
         _tasks.Clear();
     }
 
-    public void AddTask(string trackTitle)
+    public void AddTask(string taskKey, string displayName)
     {
-        if (_context == null || _tasks.ContainsKey(trackTitle))
+        if (_context == null)
             return;
-        
-        var task = _context.AddTask($"[yellow]{trackTitle}[/]");
-        
-        _tasks[trackTitle] = task;
+
+        var task = _context.AddTask($"[yellow]{Markup.Escape(displayName)}[/]");
+
+        if (!_tasks.TryAdd(taskKey, task))
+            task.StopTask();
     }
 
-    public void UpdateProgress(string trackTitle, double progress)
+    public void UpdateProgress(string taskKey, double progress)
     {
-        if (_tasks.TryGetValue(trackTitle, out var task))
+        if (_tasks.TryGetValue(taskKey, out var task))
         {
             task.Value(progress * 100);
         }
     }
 
-    public void CompleteTask(string trackTitle)
+    public void CompleteTask(string taskKey)
     {
-        if (_tasks.TryGetValue(trackTitle, out var task))
+        if (_tasks.TryGetValue(taskKey, out var task))
         {
             task.StopTask();
         }
