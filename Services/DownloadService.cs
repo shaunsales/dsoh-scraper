@@ -1,4 +1,4 @@
-using DsohScraper.Extensions;
+using DsohScraper.Helpers;
 using SoundCloudExplode;
 using SoundCloudExplode.Common;
 using SoundCloudExplode.Search;
@@ -6,10 +6,11 @@ using SoundCloudExplode.Tracks;
 
 namespace DsohScraper.Services;
 
-public class DownloadService(string outputDirectory, int userId)
+public class DownloadService(string outputDirectory, int userId, bool overwriteExisting)
 {
     private readonly SoundCloudClient _soundCloudClient = new();
     private readonly int _userId = userId;
+    private readonly bool _overwriteExisting = overwriteExisting;
 
     public async Task InitializeSoundCloudClientAsync()
     {
@@ -32,7 +33,7 @@ public class DownloadService(string outputDirectory, int userId)
             Directory.CreateDirectory(outputDirectory);
         }
 
-        foreach (var showNumber in showNumbers.OrderBy(n => n))
+        foreach (var showNumber in showNumbers)
         {
             cancellationToken.ThrowIfCancellationRequested();
             await ProcessShowDownloadAsync(showNumber, cancellationToken);
@@ -73,8 +74,9 @@ public class DownloadService(string outputDirectory, int userId)
             // Sanitize track title for filename
             foreach (var track in tracks)
             {
-                var kebabTitle = track.Title?.ToAsciiKebabCase() ?? $"dsoh-{showNumber}-deeper-shades-of-house";
-                var filePath = Path.Combine(outputDirectory, $"{kebabTitle}.mp3");
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var filePath = FileNameHelper.BuildMp3Path(outputDirectory, showNumber, track.Title);
                 
                 await DownloadTrackAsync(track, filePath, cancellationToken);
             }
@@ -91,12 +93,18 @@ public class DownloadService(string outputDirectory, int userId)
 
     private async Task<List<TrackSearchResult>> GetFilteredTracksAsync(string searchQuery, int userId, string textFilter, CancellationToken cancellationToken)
     {
-        var results = await _soundCloudClient.Search.GetTracksAsync(searchQuery: searchQuery, cancellationToken: cancellationToken);
-        return results.Where(track => track is
+        var results = new List<TrackSearchResult>();
+        await foreach (var track in _soundCloudClient.Search.GetTracksAsync(searchQuery: searchQuery, cancellationToken: cancellationToken)
+                           .WithCancellation(cancellationToken))
         {
-            UserId: var id,
-            Title: not null
-        } && id == userId && track.Title.Contains(textFilter, StringComparison.OrdinalIgnoreCase)).ToList();
+            results.Add(track);
+        }
+
+        return results.Where(track => track is
+            {
+                UserId: var id,
+                Title: not null
+            } && id == userId && track.Title.Contains(textFilter, StringComparison.OrdinalIgnoreCase)).ToList();
     }
 
     private async Task DownloadTrackAsync(Track track, string outputPath, CancellationToken cancellationToken)
@@ -111,9 +119,24 @@ public class DownloadService(string outputDirectory, int userId)
             
             if (File.Exists(outputPath))
             {
-                ProgressService.Instance.AddTask(taskKey, $"{displayName} (already exists)");
-                ProgressService.Instance.CompleteTask(taskKey);
-                return;
+                if (!_overwriteExisting)
+                {
+                    ProgressService.Instance.AddTask(taskKey, $"{displayName} (already exists)");
+                    ProgressService.Instance.CompleteTask(taskKey);
+                    return;
+                }
+
+                try
+                {
+                    File.Delete(outputPath);
+                }
+                catch (Exception ex)
+                {
+                    ProgressService.Instance.AddTask(taskKey, $"{displayName} (failed to overwrite)");
+                    ProgressService.Instance.CompleteTask(taskKey);
+                    ConsoleService.LogError($"Failed to overwrite existing file '{outputPath}': {ex.Message}");
+                    return;
+                }
             }
             
             ProgressService.Instance.AddTask(taskKey, displayName);
@@ -139,7 +162,7 @@ public class DownloadService(string outputDirectory, int userId)
         }
         catch (Exception ex)
         {
-            ConsoleService.LogError($"Error downloading track {track.Title}: {ex.Message}");
+            ConsoleService.LogError($"Error downloading track '{displayName}' to '{outputPath}': {ex.Message}");
             ProgressService.Instance.CompleteTask(taskKey);
         }
     }
